@@ -48,10 +48,10 @@
 - Авто‑скейлинг, SLO‑алертинг, нагрузочное тестирование.
 
 ### Tools/Platforms (инструменты)
-- Облако: AWS/GCP/Azure (менее критично — любой, поддерживающий управляемые сервисы).
-- Хранение/обработка: Object Storage (S3/GCS), Data Warehouse (BigQuery/Redshift), Spark.
-- Фичи: Feature Store (Feast), Orchestration (Airflow), MLFlow/Weights&Biases.
-- Serving: REST/gRPC в Kubernetes/Cloud Run/Lambda, Pub/Sub/Kafka для асинхронного.
-- Мониторинг: Prometheus/Grafana, OpenTelemetry, Evidently/WhyLabs.
+- Облако: Yandex Cloud.
+- Хранение/обработка: Object Storage (S3), Data Lake (HDFS), Spark.
+- Фичи: Feature Store (Feast), Orchestration (Airflow), Model Registry (MLFlow).
+- Serving: REST/gRPC в Kubernetes/Cloud Run, Pub/Sub/Kafka для асинхронного.
+- Мониторинг: Prometheus/Grafana, OpenTelemetry, Evidently/GreatExpectations.
 
 
