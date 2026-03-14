@@ -1,0 +1,8 @@
+terraform.tfvars
+*.tfstate
+*.tfstate.backup
+*.tfstate.backup.*
+*.tfplan
+.terraform
+.terraform.lock.hcl
+*.info
