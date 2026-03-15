@@ -63,12 +63,7 @@ resource "yandex_vpc_security_group" "security_group" {
   description = "Security group for DataProc cluster"
   network_id  = yandex_vpc_network.network.id
 
-  ingress {
-    protocol       = "ANY"
-    description    = "Allow all incoming traffic"
-    v4_cidr_blocks = ["0.0.0.0/0"]
-  }
-
+  # Ingress: only SSH, Jupyter, and internal cluster traffic
   ingress {
     protocol       = "TCP"
     description    = "SSH"
@@ -78,11 +73,20 @@ resource "yandex_vpc_security_group" "security_group" {
 
   ingress {
     protocol       = "TCP"
-    description    = "HTTPS"
+    description    = "Jupyter Notebook"
     v4_cidr_blocks = ["0.0.0.0/0"]
-    port           = 443
+    port           = 8888
   }
 
+  ingress {
+    protocol          = "ANY"
+    description       = "Internal cluster traffic"
+    from_port         = 0
+    to_port           = 65535
+    predefined_target = "self_security_group"
+  }
+
+  # Egress: allow all outgoing from master + internal cluster traffic
   egress {
     protocol       = "ANY"
     description    = "Allow all outgoing traffic"
