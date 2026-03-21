@@ -14,3 +14,4 @@ yc_security_group_name   = "otus-security-group"
 public_key_path = "~/.ssh/id_ed25519.pub"
 
 airflow_admin_password = ""  # min 8 characters
+mlflow_db_password     = ""  # password for MLflow PostgreSQL

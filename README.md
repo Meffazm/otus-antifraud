@@ -8,37 +8,40 @@
 ```
 S3 (raw CSV) → Airflow DAG → DataProc (PySpark) → S3 (Parquet)
                     ↑                                    ↓
-               расписание                         Feature Store (Feast)
-                                                         ↓
-                              MLFlow ← Model Training (PySpark) → S3 (artifacts)
+               расписание                    Model Training (PySpark)
+                                                    ↓
+                                    MLflow (VM + Managed PostgreSQL)
+                                        ├── метрики → PostgreSQL
+                                        └── модель  → S3 artifacts
 ```
 
 ## Структура репозитория
 
 ```
 ├── infra/                  # Terraform — инфраструктура Yandex Cloud
-│   ├── main.tf             # SA, VPC, S3, Managed Airflow
-│   ├── variables.tf        # Параметры
-│   ├── outputs.tf          # Выходные данные (bucket, airflow URL)
-│   └── Makefile            # apply, destroy, upload-all, airflow-vars
+│   ├── main.tf             # SA, VPC, S3, Airflow, MLflow VM, PostgreSQL
+│   ├── scripts/            # Cloud-init скрипты (MLflow setup)
+│   └── Makefile            # apply, destroy, upload-all, urls
 ├── dags/
-│   └── data_cleaning_dag.py  # Airflow DAG — автоочистка данных
+│   ├── data_cleaning_dag.py   # DAG — автоочистка данных (daily)
+│   └── model_training_dag.py  # DAG — переобучение модели (weekly)
 ├── scripts/
-│   └── data_cleaning.py    # PySpark-скрипт очистки данных
+│   ├── data_cleaning.py    # PySpark — очистка данных
+│   └── train_model.py      # PySpark — обучение модели + MLflow
 ├── notebooks/
 │   ├── data_quality_analysis.ipynb  # Анализ качества данных
 │   └── feast_features.ipynb         # Feast Feature Store демо
 ├── feature_store/          # Feast — Feature Views
-│   ├── features.py         # 2 batch + 1 on-demand Feature View
-│   └── data/               # Демо-данные
 └── docs/                   # Проектная документация
 ```
 
 ## Инфраструктура
 
 **Yandex Cloud** (Terraform):
-- **S3** — хранение данных, DAG, скриптов
-- **Managed Airflow** — оркестрация пайплайнов очистки
+- **S3** — данные, DAG, скрипты, артефакты MLflow
+- **Managed Airflow** — оркестрация пайплайнов
+- **Managed PostgreSQL** — backend store для MLflow
+- **VM** — MLflow Tracking Server (порт 5000)
 - **DataProc** — эфемерный Spark-кластер (создаётся/удаляется через DAG)
 - **VPC** — сеть с NAT-шлюзом и security group
 
@@ -57,8 +60,8 @@ S3 (raw CSV) → Airflow DAG → DataProc (PySpark) → S3 (Parquet)
 | Инфраструктура (Terraform, S3, DataProc) | ✅ | `infra-testing` |
 | Анализ качества и очистка данных | ✅ | `data-drift` |
 | Feature Store (Feast) | ✅ | `feature-store` |
-| Автоматизация пайплайна (Airflow) | 🔄 | `autoclean` |
-| Обучение модели + MLFlow | ⬜ | — |
+| Автоматизация пайплайна (Airflow) | ✅ | `autoclean` |
+| Обучение модели + MLFlow | 🔄 | `retrain` |
 | Онлайн-скоринг сервис | ⬜ | — |
 | Мониторинг дрейфа | ⬜ | — |
 

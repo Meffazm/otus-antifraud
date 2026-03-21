@@ -24,3 +24,13 @@ output "secret_key" {
 output "airflow_url" {
   value = "https://c-${yandex_airflow_cluster.airflow.id}.airflow.yandexcloud.net"
 }
+
+# MLflow UI URL (external)
+output "mlflow_url" {
+  value = "http://${yandex_compute_instance.mlflow.network_interface[0].nat_ip_address}:5000"
+}
+
+# MLflow internal URL (for DataProc nodes)
+output "mlflow_internal_url" {
+  value = "http://${yandex_compute_instance.mlflow.network_interface[0].ip_address}:5000"
+}

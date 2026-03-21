@@ -86,6 +86,13 @@ resource "yandex_vpc_security_group" "security_group" {
   }
 
   ingress {
+    protocol       = "TCP"
+    description    = "MLflow UI"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = 5000
+  }
+
+  ingress {
     protocol          = "ANY"
     description       = "Internal cluster traffic"
     from_port         = 0
@@ -176,11 +183,82 @@ resource "yandex_airflow_cluster" "airflow" {
 }
 
 # ============================================================
-# DataProc: Spark cluster (created by Airflow DAG, not Terraform)
+# MLflow: Managed PostgreSQL + VM with MLflow server
 # ============================================================
-# The DataProc cluster is now managed by the Airflow DAG
-# (created before each cleaning run, deleted after).
-# Terraform only manages the persistent infrastructure.
+
+resource "yandex_mdb_postgresql_cluster" "mlflow_db" {
+  name        = "otus-mlflow-db"
+  environment = "PRESTABLE"
+  network_id  = yandex_vpc_network.network.id
+
+  config {
+    version = 15
+    resources {
+      resource_preset_id = "s2.micro"
+      disk_type_id       = "network-ssd"
+      disk_size          = 10
+    }
+  }
+
+  database {
+    name  = "mlflow"
+    owner = "mlflow"
+  }
+
+  user {
+    name     = "mlflow"
+    password = var.mlflow_db_password
+    permission {
+      database_name = "mlflow"
+    }
+  }
+
+  host {
+    zone      = var.yc_zone
+    subnet_id = yandex_vpc_subnet.subnet.id
+  }
+}
+
+resource "yandex_compute_instance" "mlflow" {
+  name        = var.mlflow_vm_name
+  platform_id = "standard-v3"
+  zone        = var.yc_zone
+
+  resources {
+    cores  = 2
+    memory = 4
+  }
+
+  scheduling_policy {
+    preemptible = true
+  }
+
+  boot_disk {
+    initialize_params {
+      image_id = "fd81radk00nmm2jpqh94"  # Ubuntu 22.04 LTS
+      size     = 15
+    }
+  }
+
+  network_interface {
+    subnet_id          = yandex_vpc_subnet.subnet.id
+    nat                = true
+    security_group_ids = [yandex_vpc_security_group.security_group.id]
+  }
+
+  metadata = {
+    ssh-keys  = "ubuntu:${file(var.public_key_path)}"
+    user-data = templatefile("${path.module}/scripts/mlflow_setup.sh", {
+      s3_access_key  = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+      s3_secret_key  = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+      s3_bucket_name = yandex_storage_bucket.data_bucket.bucket
+      db_host        = yandex_mdb_postgresql_cluster.mlflow_db.host[0].fqdn
+      db_password    = var.mlflow_db_password
+    })
+  }
+
+  depends_on = [yandex_mdb_postgresql_cluster.mlflow_db]
+}
 
 # ============================================================
 # Output: Airflow variables JSON (for import into Airflow UI)
@@ -199,6 +277,8 @@ resource "local_file" "airflow_variables" {
     DP_SECURITY_GROUP_ID = yandex_vpc_security_group.security_group.id
     DP_SA_ID             = yandex_iam_service_account.sa.id
     DP_SA_AUTH_KEY_PUBLIC_KEY = yandex_iam_service_account_key.sa_auth_key.public_key
+    MLFLOW_TRACKING_URI  = "http://${yandex_compute_instance.mlflow.network_interface[0].ip_address}:5000"
+    MLFLOW_EXTERNAL_URL  = "http://${yandex_compute_instance.mlflow.network_interface[0].nat_ip_address}:5000"
     DP_SA_JSON = jsonencode({
       id                 = yandex_iam_service_account_key.sa_auth_key.id
       service_account_id = yandex_iam_service_account.sa.id

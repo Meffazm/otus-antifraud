@@ -91,3 +91,16 @@ variable "airflow_admin_password" {
   description = "Admin password for Airflow web UI (min 8 chars)"
   sensitive   = true
 }
+
+# MLflow VM
+variable "mlflow_vm_name" {
+  type        = string
+  description = "Name of the MLflow VM"
+  default     = "otus-mlflow"
+}
+
+variable "mlflow_db_password" {
+  type        = string
+  description = "Password for MLflow PostgreSQL database"
+  sensitive   = true
+}
