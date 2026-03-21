@@ -135,7 +135,7 @@ def main():
     parser.add_argument("--s3-endpoint-url", required=True)
     parser.add_argument("--s3-access-key", required=True)
     parser.add_argument("--s3-secret-key", required=True)
-    parser.add_argument("--bootstrap-iterations", type=int, default=50)
+    parser.add_argument("--bootstrap-iterations", type=int, default=10)
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--auto-deploy", action="store_true")
     parser.add_argument("--run-name", default=None)
@@ -159,21 +159,14 @@ def main():
     spark = create_spark_session(s3_config)
 
     try:
-        # Load test data (single parquet partition, sample 100K rows)
+        # Load test data (single parquet partition)
         input_path = args.input.rstrip("/")
         single_file = f"{input_path}/part-00001*"
         print(f"Loading test data from {single_file}")
         df = spark.read.parquet(single_file)
         df = create_features(df)
         df = df.select(FEATURE_COLS + ["tx_fraud"]).na.drop()
-        total = df.count()
-        if total > 100000:
-            df = df.limit(100000)
-            print(f"Sampled 100K from {total} rows")
-        else:
-            print(f"Test data: {total} rows")
-        df.cache()
-        df.count()  # trigger cache
+        print(f"Test data: {df.count()} rows")
 
         # Find champion and latest challenger
         model_name = f"{args.experiment_name}_model"
