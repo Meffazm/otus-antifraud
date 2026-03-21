@@ -135,7 +135,7 @@ def main():
     parser.add_argument("--s3-endpoint-url", required=True)
     parser.add_argument("--s3-access-key", required=True)
     parser.add_argument("--s3-secret-key", required=True)
-    parser.add_argument("--bootstrap-iterations", type=int, default=10)
+    parser.add_argument("--bootstrap-iterations", type=int, default=50)
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--auto-deploy", action="store_true")
     parser.add_argument("--run-name", default=None)
