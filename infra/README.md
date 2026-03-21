@@ -60,5 +60,9 @@ DAG `data_cleaning` — ежедневный автоматический зап
 ## Удаление
 
 ```bash
+# Удалить Airflow и сеть, оставить S3 и SA
+make destroy-infra
+
+# Удалить всё, включая S3
 make destroy
 ```
