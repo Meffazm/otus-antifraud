@@ -155,6 +155,7 @@ def main():
 
     mlflow.set_tracking_uri(args.tracking_uri)
     mlflow.set_experiment(args.experiment_name)
+    client = MlflowClient()
     print(f"MLflow: {args.tracking_uri}, experiment: {args.experiment_name}")
 
     s3_config = {
@@ -183,8 +184,15 @@ def main():
         print(f"Saving model to {args.output}")
         model.write().overwrite().save(args.output)
 
-        if args.auto_register:
-            compare_and_register(metrics, args.experiment_name)
+        # Always register model version (validation decides champion)
+        model_name = f"{args.experiment_name}_model"
+        try:
+            client.get_registered_model(model_name)
+        except Exception:
+            client.create_registered_model(model_name)
+        model_uri = f"runs:/{metrics['run_id']}/model"
+        mv = mlflow.register_model(model_uri, model_name)
+        print(f"Registered model version {mv.version}")
 
         print("Training completed successfully!")
     except Exception as e:

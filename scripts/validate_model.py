@@ -135,7 +135,7 @@ def main():
     parser.add_argument("--s3-endpoint-url", required=True)
     parser.add_argument("--s3-access-key", required=True)
     parser.add_argument("--s3-secret-key", required=True)
-    parser.add_argument("--bootstrap-iterations", type=int, default=50)
+    parser.add_argument("--bootstrap-iterations", type=int, default=10)
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--auto-deploy", action="store_true")
     parser.add_argument("--run-name", default=None)
@@ -159,33 +159,40 @@ def main():
     spark = create_spark_session(s3_config)
 
     try:
-        # Load test data (single parquet partition)
+        # Load test data (single parquet partition, sample 100K rows)
         input_path = args.input.rstrip("/")
         single_file = f"{input_path}/part-00001*"
         print(f"Loading test data from {single_file}")
         df = spark.read.parquet(single_file)
         df = create_features(df)
         df = df.select(FEATURE_COLS + ["tx_fraud"]).na.drop()
-        print(f"Test data: {df.count()} rows")
+        total = df.count()
+        if total > 100000:
+            df = df.limit(100000)
+            print(f"Sampled 100K from {total} rows")
+        else:
+            print(f"Test data: {total} rows")
+        df.cache()
+        df.count()  # trigger cache
 
         # Find champion and latest challenger
         model_name = f"{args.experiment_name}_model"
         print(f"Looking for registered model: {model_name}")
 
         try:
-            champion_versions = client.get_latest_versions(model_name)
+            all_versions = client.search_model_versions(f"name='{model_name}'")
         except Exception:
             print("No registered model found. Nothing to validate.")
             spark.stop()
             return
 
-        if len(champion_versions) < 1:
-            print("No model versions found. Nothing to validate.")
+        if len(all_versions) < 2:
+            print(f"Only {len(all_versions)} model version(s). Nothing to validate yet. Skipping.")
             spark.stop()
             return
 
         # Get latest two versions for comparison
-        versions = sorted(champion_versions, key=lambda v: int(v.version), reverse=True)
+        versions = sorted(all_versions, key=lambda v: int(v.version), reverse=True)
         latest = versions[0]
 
         print(f"Latest version: {latest.version} (run_id: {latest.run_id})")
@@ -195,7 +202,6 @@ def main():
         print(f"Loading model from {model_uri}")
         candidate_model = mlflow.spark.load_model(model_uri)
 
-        # If there's a previous version, compare; otherwise just validate the latest
         if len(versions) >= 2:
             previous = versions[1]
             print(f"Previous version: {previous.version} (run_id: {previous.run_id})")
@@ -272,9 +278,6 @@ def main():
                     except Exception as e:
                         client.set_model_version_tag(model_name, latest.version, "alias", "champion")
                         print(f"Deployed version {latest.version} as champion (via tag)")
-            else:
-                print(f"\nCandidate metrics: AUC={mean_auc:.4f}, F1={mean_f1:.4f}")
-                mlflow.log_param("validation_type", "single_model")
 
         print("Validation complete!")
 

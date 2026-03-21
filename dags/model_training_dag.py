@@ -119,7 +119,6 @@ with DAG(
             "--s3-access-key", S3_ACCESS_KEY,
             "--s3-secret-key", S3_SECRET_KEY,
             "--run-name", f"training_{datetime.now().strftime('%Y%m%d_%H%M')}",
-            "--auto-register",
         ],
         properties={
             "spark.submit.deployMode": "cluster",
