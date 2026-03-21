@@ -129,9 +129,31 @@ with DAG(
         },
     )
 
+    validate_model = DataprocCreatePysparkJobOperator(
+        task_id="validate_model",
+        main_python_file_uri=f"{S3_SRC_BUCKET}/validate_model.py",
+        connection_id=YC_SA_CONNECTION.conn_id,
+        args=[
+            "--input", f"s3a://{S3_BUCKET_NAME}/cleaned/",
+            "--tracking-uri", MLFLOW_TRACKING_URI,
+            "--experiment-name", "antifraud_model",
+            "--s3-endpoint-url", S3_ENDPOINT_URL,
+            "--s3-access-key", S3_ACCESS_KEY,
+            "--s3-secret-key", S3_SECRET_KEY,
+            "--run-name", f"validation_{datetime.now().strftime('%Y%m%d_%H%M')}",
+            "--auto-deploy",
+        ],
+        properties={
+            "spark.submit.deployMode": "cluster",
+            "spark.yarn.dist.archives": f"{S3_VENV_ARCHIVE}#.venv",
+            "spark.yarn.appMasterEnv.PYSPARK_PYTHON": "./.venv/bin/python3",
+            "spark.yarn.appMasterEnv.PYSPARK_DRIVER_PYTHON": "./.venv/bin/python3",
+        },
+    )
+
     delete_cluster = DataprocDeleteClusterOperator(
         task_id="delete_dataproc_cluster",
         trigger_rule=TriggerRule.ALL_DONE,
     )
 
-    setup_connections >> create_cluster >> train_model >> delete_cluster
+    setup_connections >> create_cluster >> train_model >> validate_model >> delete_cluster

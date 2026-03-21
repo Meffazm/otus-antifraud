@@ -33,6 +33,7 @@ upload-dags:
 upload-scripts:
 	s3cmd put ../scripts/data_cleaning.py s3://$(BUCKET_NAME)/src/data_cleaning.py
 	s3cmd put ../scripts/train_model.py s3://$(BUCKET_NAME)/src/train_model.py
+	s3cmd put ../scripts/validate_model.py s3://$(BUCKET_NAME)/src/validate_model.py
 	s3cmd put ../scripts/test_mlflow.py s3://$(BUCKET_NAME)/src/test_mlflow.py
 	s3cmd put ../../hw_06/Excersise/mlflow-spark-1.27.0.jar s3://$(BUCKET_NAME)/src/mlflow-spark-1.27.0.jar
 

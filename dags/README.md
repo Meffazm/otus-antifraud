@@ -12,22 +12,26 @@
 
 ## model_training
 
-Еженедельное переобучение модели антифрода.
+Еженедельное переобучение и валидация модели антифрода.
 
 1. Создаёт временный Spark-кластер (DataProc)
-2. Запускает `train_model.py` — обучение LogisticRegression на очищенных данных
-3. Логирует метрики (AUC, F1, Accuracy) и модель в MLflow
-4. Регистрирует модель в MLflow Model Registry
+2. Обучает модель (`train_model.py`) — LogisticRegression, логирует в MLflow
+3. Валидирует модель (`validate_model.py`) — A/B тест с bootstrap + t-test
+4. Если улучшение статистически значимо — промотирует модель в champion
 5. Удаляет кластер
 
-Для работы `train_model.py` используется Python venv (с mlflow), который распространяется на DataProc через `spark.yarn.dist.archives`.
+Валидация:
+- Bootstrap resampling (50 итераций) на тестовых данных
+- t-test для сравнения champion vs candidate
+- Cohen's d для оценки размера эффекта
+- Деплой только при p < α и improvement > 0
 
 ## Как запустить
 
 ```bash
 cd infra
-make upload-all     # загрузить DAGs, скрипты в S3
-make airflow-vars   # показать инструкцию по импорту переменных
+make upload-all
+make airflow-vars
 ```
 
-> **Важно:** При повторном импорте переменных в Airflow, сначала удалите старые (Select all → Delete), затем импортируйте заново.
+> При повторном импорте переменных: сначала удалите старые, затем импортируйте заново.
