@@ -4,7 +4,7 @@
 
 resource "yandex_iam_service_account" "sa" {
   name        = var.yc_service_account_name
-  description = "Service account for DataProc cluster and S3 access"
+  description = "Service account for DataProc, Airflow, and S3"
 }
 
 resource "yandex_resourcemanager_folder_iam_member" "sa_roles" {
@@ -15,6 +15,8 @@ resource "yandex_resourcemanager_folder_iam_member" "sa_roles" {
     "mdb.dataproc.agent",
     "vpc.user",
     "iam.serviceAccounts.user",
+    "compute.admin",
+    "managed-airflow.integrationProvider",
   ])
 
   folder_id = var.yc_folder_id
@@ -22,9 +24,15 @@ resource "yandex_resourcemanager_folder_iam_member" "sa_roles" {
   member    = "serviceAccount:${yandex_iam_service_account.sa.id}"
 }
 
+# Static key for S3 access
 resource "yandex_iam_service_account_static_access_key" "sa_static_key" {
   service_account_id = yandex_iam_service_account.sa.id
   description        = "Static access key for S3"
+}
+
+# Authorized key for DataProc (needed by Airflow to create clusters)
+resource "yandex_iam_service_account_key" "sa_auth_key" {
+  service_account_id = yandex_iam_service_account.sa.id
 }
 
 # ============================================================
@@ -60,10 +68,9 @@ resource "yandex_vpc_subnet" "subnet" {
 
 resource "yandex_vpc_security_group" "security_group" {
   name        = var.yc_security_group_name
-  description = "Security group for DataProc cluster"
+  description = "Security group for DataProc and Airflow"
   network_id  = yandex_vpc_network.network.id
 
-  # Ingress: only SSH, Jupyter, and internal cluster traffic
   ingress {
     protocol       = "TCP"
     description    = "SSH"
@@ -86,7 +93,6 @@ resource "yandex_vpc_security_group" "security_group" {
     predefined_target = "self_security_group"
   }
 
-  # Egress: allow all outgoing from master + internal cluster traffic
   egress {
     protocol       = "ANY"
     description    = "Allow all outgoing traffic"
@@ -103,7 +109,7 @@ resource "yandex_vpc_security_group" "security_group" {
 }
 
 # ============================================================
-# Storage: S3 bucket
+# Storage: S3 bucket (data + DAGs)
 # ============================================================
 
 resource "yandex_storage_bucket" "data_bucket" {
@@ -112,7 +118,6 @@ resource "yandex_storage_bucket" "data_bucket" {
   secret_key    = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
   force_destroy = true
 
-  # Public read access
   anonymous_access_flags {
     read        = true
     list        = true
@@ -121,59 +126,87 @@ resource "yandex_storage_bucket" "data_bucket" {
 }
 
 # ============================================================
-# DataProc: Spark cluster
+# Airflow: Managed Service
 # ============================================================
 
-resource "yandex_dataproc_cluster" "dataproc_cluster" {
+resource "yandex_airflow_cluster" "airflow" {
   depends_on = [yandex_resourcemanager_folder_iam_member.sa_roles]
 
-  name               = var.yc_dataproc_cluster_name
-  description        = "Spark cluster for OTUS MLOps anti-fraud project"
-  bucket             = yandex_storage_bucket.data_bucket.bucket
+  name               = var.yc_airflow_cluster_name
   service_account_id = yandex_iam_service_account.sa.id
-  zone_id            = var.yc_zone
-  security_group_ids = [yandex_vpc_security_group.security_group.id]
+  subnet_ids         = [yandex_vpc_subnet.subnet.id]
+  admin_password     = var.airflow_admin_password
 
-  labels = {
-    created_by = "terraform"
-  }
-
-  cluster_config {
-    version_id = var.yc_dataproc_version
-
-    hadoop {
-      services = ["HDFS", "YARN", "SPARK", "HIVE", "TEZ"]
-      properties = {
-        "yarn:yarn.resourcemanager.am.max-attempts" = 5
-      }
-      ssh_public_keys = [file(var.public_key_path)]
-    }
-
-    # Master subcluster: s3-c2-m8, 40 GB
-    subcluster_spec {
-      name = "master"
-      role = "MASTERNODE"
-      resources {
-        resource_preset_id = var.dataproc_master_resources.resource_preset_id
-        disk_type_id       = var.dataproc_master_resources.disk_type_id
-        disk_size          = var.dataproc_master_resources.disk_size
-      }
-      subnet_id        = yandex_vpc_subnet.subnet.id
-      hosts_count      = 1
-      assign_public_ip = true
-    }
-
-    # Data subcluster: s3-c4-m16, 128 GB, 3 hosts
-    subcluster_spec {
-      name = "data"
-      role = "DATANODE"
-      resources {
-        resource_preset_id = var.dataproc_data_resources.resource_preset_id
-        disk_type_id       = var.dataproc_data_resources.disk_type_id
-        disk_size          = var.dataproc_data_resources.disk_size
-      }
-      subnet_id   = yandex_vpc_subnet.subnet.id
-      hosts_count = var.dataproc_data_resources.hosts_count
+  code_sync = {
+    s3 = {
+      bucket = yandex_storage_bucket.data_bucket.bucket
     }
   }
+
+  webserver = {
+    count              = 1
+    resource_preset_id = "c1-m4"
+  }
+
+  scheduler = {
+    count              = 1
+    resource_preset_id = "c1-m4"
+  }
+
+  worker = {
+    min_count          = 1
+    max_count          = 2
+    resource_preset_id = "c1-m4"
+  }
+
+  airflow_config = {
+    "api" = {
+      "auth_backends" = "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
+    }
+    "scheduler" = {
+      "dag_dir_list_interval" = "30"
+    }
+  }
+
+  logging = {
+    enabled   = true
+    folder_id = var.yc_folder_id
+    min_level = "INFO"
+  }
+}
+
+# ============================================================
+# DataProc: Spark cluster (created by Airflow DAG, not Terraform)
+# ============================================================
+# The DataProc cluster is now managed by the Airflow DAG
+# (created before each cleaning run, deleted after).
+# Terraform only manages the persistent infrastructure.
+
+# ============================================================
+# Output: Airflow variables JSON (for import into Airflow UI)
+# ============================================================
+
+resource "local_file" "airflow_variables" {
+  content = jsonencode({
+    YC_ZONE              = var.yc_zone
+    YC_FOLDER_ID         = var.yc_folder_id
+    YC_SUBNET_ID         = yandex_vpc_subnet.subnet.id
+    YC_SSH_PUBLIC_KEY    = trimspace(file(var.public_key_path))
+    S3_ENDPOINT_URL      = "https://storage.yandexcloud.net"
+    S3_ACCESS_KEY        = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+    S3_SECRET_KEY        = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+    S3_BUCKET_NAME       = yandex_storage_bucket.data_bucket.bucket
+    DP_SECURITY_GROUP_ID = yandex_vpc_security_group.security_group.id
+    DP_SA_ID             = yandex_iam_service_account.sa.id
+    DP_SA_AUTH_KEY_PUBLIC_KEY = yandex_iam_service_account_key.sa_auth_key.public_key
+    DP_SA_JSON = jsonencode({
+      id                 = yandex_iam_service_account_key.sa_auth_key.id
+      service_account_id = yandex_iam_service_account.sa.id
+      created_at         = yandex_iam_service_account_key.sa_auth_key.created_at
+      public_key         = yandex_iam_service_account_key.sa_auth_key.public_key
+      private_key        = yandex_iam_service_account_key.sa_auth_key.private_key
+    })
+  })
+  filename        = "${path.module}/airflow_variables.json"
+  file_permission = "0600"
 }

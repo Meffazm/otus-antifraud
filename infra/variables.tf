@@ -79,45 +79,15 @@ variable "public_key_path" {
   default     = "~/.ssh/id_ed25519.pub"
 }
 
-# DataProc cluster
-variable "yc_dataproc_cluster_name" {
+# Airflow
+variable "yc_airflow_cluster_name" {
   type        = string
-  description = "Name of the DataProc cluster"
-  default     = "otus-dataproc-cluster"
+  description = "Name of the Managed Airflow cluster"
+  default     = "otus-airflow"
 }
 
-variable "yc_dataproc_version" {
+variable "airflow_admin_password" {
   type        = string
-  description = "DataProc image version"
-  default     = "2.0"
-}
-
-variable "dataproc_master_resources" {
-  type = object({
-    resource_preset_id = string
-    disk_type_id       = string
-    disk_size          = number
-  })
-  description = "Master subcluster resource configuration"
-  default = {
-    resource_preset_id = "s3-c2-m8"
-    disk_type_id       = "network-ssd"
-    disk_size          = 40
-  }
-}
-
-variable "dataproc_data_resources" {
-  type = object({
-    resource_preset_id = string
-    disk_type_id       = string
-    disk_size          = number
-    hosts_count        = number
-  })
-  description = "Data subcluster resource configuration"
-  default = {
-    resource_preset_id = "s3-c4-m16"
-    disk_type_id       = "network-ssd"
-    disk_size          = 128
-    hosts_count        = 3
-  }
+  description = "Admin password for Airflow web UI (min 8 chars)"
+  sensitive   = true
 }

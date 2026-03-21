@@ -6,37 +6,40 @@
 ## Архитектура
 
 ```
-S3 (raw CSV) → Data Cleaning (PySpark) → S3 (Parquet) → Feature Store (Feast)
-                                                              ↓
-                              MLFlow ← Model Training (PySpark/Spark) → S3 (artifacts)
-                                              ↓
-                              Airflow (оркестрация пайплайнов)
+S3 (raw CSV) → Airflow DAG → DataProc (PySpark) → S3 (Parquet)
+                    ↑                                    ↓
+               расписание                         Feature Store (Feast)
+                                                         ↓
+                              MLFlow ← Model Training (PySpark) → S3 (artifacts)
 ```
 
 ## Структура репозитория
 
 ```
 ├── infra/                  # Terraform — инфраструктура Yandex Cloud
-│   ├── main.tf             # SA, VPC, S3, DataProc кластер
-│   ├── variables.tf        # Параметры (кластер, сеть, бакет)
-│   ├── outputs.tf          # Выходные данные (bucket, ключи, cluster ID)
-│   └── Makefile            # apply, destroy, ssh, jupyter, clean-data
+│   ├── main.tf             # SA, VPC, S3, Managed Airflow
+│   ├── variables.tf        # Параметры
+│   ├── outputs.tf          # Выходные данные (bucket, airflow URL)
+│   └── Makefile            # apply, destroy, upload-all, airflow-vars
+├── dags/
+│   └── data_cleaning_dag.py  # Airflow DAG — автоочистка данных
 ├── scripts/
 │   └── data_cleaning.py    # PySpark-скрипт очистки данных
 ├── notebooks/
-│   └── data_quality_analysis.ipynb  # Анализ качества данных
+│   ├── data_quality_analysis.ipynb  # Анализ качества данных
+│   └── feast_features.ipynb         # Feast Feature Store демо
+├── feature_store/          # Feast — Feature Views
+│   ├── features.py         # 2 batch + 1 on-demand Feature View
+│   └── data/               # Демо-данные
 └── docs/                   # Проектная документация
-    ├── 01_goals_and_metrics.md
-    ├── 02_mission_canvas.md
-    ├── 03_system_decomposition.md
-    └── 04_smart_tasks.md
 ```
 
 ## Инфраструктура
 
 **Yandex Cloud** (Terraform):
-- **S3** — хранение сырых данных и очищенных Parquet-файлов
-- **DataProc** — Spark-кластер (master s3-c2-m8 + 3× data s3-c4-m16)
+- **S3** — хранение данных, DAG, скриптов
+- **Managed Airflow** — оркестрация пайплайнов очистки
+- **DataProc** — эфемерный Spark-кластер (создаётся/удаляется через DAG)
 - **VPC** — сеть с NAT-шлюзом и security group
 
 Подробнее: [infra/README.md](infra/README.md)
@@ -52,9 +55,9 @@ S3 (raw CSV) → Data Cleaning (PySpark) → S3 (Parquet) → Feature Store (Fea
 | Этап | Статус | Ветка |
 |------|--------|-------|
 | Инфраструктура (Terraform, S3, DataProc) | ✅ | `infra-testing` |
-| Анализ качества и очистка данных | 🔄 | `data-drift` |
-| Feature Store (Feast) | ⬜ | — |
-| Автоматизация пайплайна (Airflow) | ⬜ | — |
+| Анализ качества и очистка данных | ✅ | `data-drift` |
+| Feature Store (Feast) | ✅ | `feature-store` |
+| Автоматизация пайплайна (Airflow) | 🔄 | `autoclean` |
 | Обучение модели + MLFlow | ⬜ | — |
 | Онлайн-скоринг сервис | ⬜ | — |
 | Мониторинг дрейфа | ⬜ | — |

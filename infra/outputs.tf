@@ -20,7 +20,7 @@ output "secret_key" {
   sensitive = true
 }
 
-# DataProc cluster ID
-output "dataproc_cluster_id" {
-  value = yandex_dataproc_cluster.dataproc_cluster.id
+# Airflow web UI URL
+output "airflow_url" {
+  value = "https://c-${yandex_airflow_cluster.airflow.id}.airflow.yandexcloud.net"
 }
