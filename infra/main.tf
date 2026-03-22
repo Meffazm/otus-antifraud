@@ -23,6 +23,8 @@ resource "yandex_resourcemanager_folder_iam_member" "sa_roles" {
     "k8s.admin",
     "k8s.clusters.agent",
     "k8s.tunnelClusters.agent",
+    "vpc.publicAdmin",
+    "load-balancer.admin",
   ])
 
   folder_id = var.yc_folder_id
@@ -414,7 +416,7 @@ resource "yandex_kubernetes_cluster" "k8s" {
   network_id  = yandex_vpc_network.network.id
 
   master {
-    version = "1.28"
+    version = "1.34"
     zonal {
       zone      = var.yc_zone
       subnet_id = yandex_vpc_subnet.subnet.id
@@ -428,6 +430,9 @@ resource "yandex_kubernetes_cluster" "k8s" {
   node_service_account_id = yandex_iam_service_account.sa.id
 
   release_channel         = "RAPID"
+
+  cluster_ipv4_range = "10.200.0.0/16"
+  service_ipv4_range = "10.201.0.0/16"
 
   depends_on = [yandex_resourcemanager_folder_iam_member.sa_roles]
 }
