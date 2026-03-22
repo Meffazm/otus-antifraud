@@ -1,0 +1,14 @@
+.venv/
+.venv-feast/
+__pycache__/
+*.pyc
+tests/
+.git/
+.github/
+screenshots/
+notebooks/
+docs/
+infra/
+dags/
+feature_store/
+*.md
