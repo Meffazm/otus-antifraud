@@ -159,7 +159,57 @@ kafka-topics:
 ssh-mlflow:
 	ssh ubuntu@$(MLFLOW_HOST)
 
+# Install Prometheus + Grafana via Helm
+helm-monitoring:
+	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+	helm repo update
+	helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+		--set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
+		--set prometheus.prometheusSpec.ruleSelectorNilUsesHelmValues=false \
+		--wait --timeout 5m
+	kubectl apply -f ../k8s/servicemonitor.yaml
+	kubectl apply -f ../k8s/prometheusrule.yaml
+
+# Install Airflow in K8s via Helm (syncs DAGs from git)
+helm-airflow:
+	helm repo add apache-airflow https://airflow.apache.org
+	helm repo update
+	helm upgrade --install airflow apache-airflow/airflow \
+		--set dags.gitSync.enabled=true \
+		--set dags.gitSync.repo=https://github.com/Meffazm/otus-antifraud-dags.git \
+		--set dags.gitSync.branch=main \
+		--set dags.gitSync.subPath=dags \
+		--set dags.gitSync.wait=60 \
+		--wait --timeout 10m
+
+# Apply HPA (autoscaling 4-6 replicas)
+k8s-hpa:
+	kubectl apply -f ../k8s/hpa.yaml
+	kubectl get hpa antifraud-api
+
+# Port-forward Grafana (http://localhost:3000, admin/prom-operator)
+grafana:
+	@echo "Grafana: http://localhost:3000  (admin / prom-operator)"
+	kubectl port-forward svc/monitoring-grafana 3000:80
+
+# Port-forward Prometheus (http://localhost:9090)
+prometheus:
+	@echo "Prometheus: http://localhost:9090"
+	kubectl port-forward svc/monitoring-kube-prometheus-prometheus 9090:9090
+
+# Port-forward Airflow (http://localhost:8080, admin/admin)
+airflow-ui:
+	@echo "Airflow: http://localhost:8080  (admin / admin)"
+	kubectl port-forward svc/airflow-webserver 8080:8080
+
+# Run load test against the deployed API
+k8s-load-test:
+	@EXTERNAL_IP=$$(kubectl get svc antifraud-api -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null); \
+	if [ -z "$$EXTERNAL_IP" ]; then echo "No external IP yet."; exit 1; fi; \
+	python3 ../scripts/load_test.py --url http://$$EXTERNAL_IP/predict --max-workers 200 --duration 600
+
 .PHONY: init plan apply destroy destroy-infra kubeconfig destroy-k8s \
 	upload-dags upload-scripts upload-venv upload-all rebuild-venv \
 	deploy urls airflow-vars kafka-status kafka-topics ssh-mlflow \
-	docker-build docker-push k8s-deploy k8s-status k8s-test convert-model github-secrets
+	docker-build docker-push k8s-deploy k8s-status k8s-test convert-model github-secrets \
+	helm-monitoring helm-airflow k8s-hpa grafana prometheus airflow-ui k8s-load-test

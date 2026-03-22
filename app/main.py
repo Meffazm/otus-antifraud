@@ -6,6 +6,8 @@ from typing import Optional
 
 from fastapi import FastAPI
 from pydantic import BaseModel
+from starlette_exporter import PrometheusMiddleware, handle_metrics
+from prometheus_client import Counter
 
 from app.features import extract_features
 from app.model import AntifraudModel
@@ -16,6 +18,12 @@ MODEL_PATH = os.getenv(
 )
 
 app = FastAPI(title="Anti-Fraud Prediction Service")
+app.add_middleware(PrometheusMiddleware)
+app.add_route("/metrics", handle_metrics)
+
+PREDICTIONS_TOTAL = Counter("predictions_total", "Total predictions served")
+FRAUD_PREDICTIONS_TOTAL = Counter("fraud_predictions_total", "Fraud predictions (prediction=1)")
+
 model = AntifraudModel(MODEL_PATH)
 
 
@@ -46,6 +54,9 @@ def predict(request: TransactionRequest):
     """Predict whether a transaction is fraudulent."""
     features = extract_features(request.tx_amount, request.tx_datetime)
     prediction, probability = model.predict(features)
+    PREDICTIONS_TOTAL.inc()
+    if prediction == 1:
+        FRAUD_PREDICTIONS_TOTAL.inc()
     return PredictionResponse(
         transaction_id=request.transaction_id,
         prediction=prediction,
