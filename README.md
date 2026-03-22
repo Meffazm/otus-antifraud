@@ -173,7 +173,7 @@ make upload-all
 3. **Docker** — `python:3.11-slim`, ~200 МБ образ (FastAPI + uvicorn + numpy + model.json)
 
 4. **CI/CD** (`.github/workflows/ci-cd.yml`):
-   - Триггер: push в `main`
+   - Триггер: push в `main` или `k8s-deploy`
    - Этапы: тесты (pytest) → сборка Docker → push в YC Container Registry → deploy в K8s
    - Автоматический деплой: `kubectl apply` + `rollout status`
 
@@ -185,6 +185,12 @@ make upload-all
    - `yandex_container_registry` — реестр Docker-образов
    - `yandex_kubernetes_cluster` — Managed K8s (зональный, публичный IP)
    - `yandex_kubernetes_node_group` — 3 узла (standard-v3, 2 vCPU, 4 ГБ RAM, preemptible)
+
+### Скриншоты
+
+| GitHub Actions CI/CD | Тестирование API |
+|:---:|:---:|
+| ![GitHub Actions](screenshots/hw_09/gh_actions.png) | ![API Test](screenshots/hw_09/check_api.png) |
 
 ### Как воспроизвести
 

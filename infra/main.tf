@@ -109,6 +109,20 @@ resource "yandex_vpc_security_group" "security_group" {
 
   ingress {
     protocol       = "TCP"
+    description    = "HTTP (K8s LoadBalancer)"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = 80
+  }
+
+  ingress {
+    protocol       = "TCP"
+    description    = "K8s NLB health checks"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = 10256
+  }
+
+  ingress {
+    protocol       = "TCP"
     description    = "K8s API server"
     v4_cidr_blocks = ["0.0.0.0/0"]
     port           = 6443
