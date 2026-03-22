@@ -104,3 +104,10 @@ variable "mlflow_db_password" {
   description = "Password for MLflow PostgreSQL database"
   sensitive   = true
 }
+
+# Kafka
+variable "kafka_password" {
+  type        = string
+  description = "Password for Kafka users (producer/consumer)"
+  sensitive   = true
+}

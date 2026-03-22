@@ -17,6 +17,7 @@ resource "yandex_resourcemanager_folder_iam_member" "sa_roles" {
     "iam.serviceAccounts.user",
     "compute.admin",
     "managed-airflow.integrationProvider",
+    "managed-kafka.admin",
   ])
 
   folder_id = var.yc_folder_id
@@ -90,6 +91,13 @@ resource "yandex_vpc_security_group" "security_group" {
     description    = "MLflow UI"
     v4_cidr_blocks = ["0.0.0.0/0"]
     port           = 5000
+  }
+
+  ingress {
+    protocol       = "TCP"
+    description    = "Kafka SASL_SSL"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = 9091
   }
 
   ingress {
@@ -261,6 +269,74 @@ resource "yandex_compute_instance" "mlflow" {
 }
 
 # ============================================================
+# Kafka: Managed Service
+# ============================================================
+
+resource "yandex_mdb_kafka_cluster" "kafka" {
+  name        = "otus-kafka"
+  environment = "PRODUCTION"
+  network_id  = yandex_vpc_network.network.id
+  subnet_ids  = [yandex_vpc_subnet.subnet.id]
+  security_group_ids = [yandex_vpc_security_group.security_group.id]
+
+  config {
+    version          = "3.7"
+    brokers_count    = 1
+    zones            = [var.yc_zone]
+    assign_public_ip = true
+
+    kafka {
+      resources {
+        resource_preset_id = "s2.micro"
+        disk_type_id       = "network-ssd"
+        disk_size          = 32
+      }
+      kafka_config {
+        auto_create_topics_enable = true
+      }
+    }
+  }
+
+  topic {
+    name               = "transactions"
+    partitions         = 3
+    replication_factor = 1
+  }
+
+  topic {
+    name               = "predictions"
+    partitions         = 3
+    replication_factor = 1
+  }
+
+  user {
+    name     = "producer"
+    password = var.kafka_password
+    permission {
+      topic_name = "transactions"
+      role       = "ACCESS_ROLE_PRODUCER"
+    }
+  }
+
+  user {
+    name     = "consumer"
+    password = var.kafka_password
+    permission {
+      topic_name = "transactions"
+      role       = "ACCESS_ROLE_CONSUMER"
+    }
+    permission {
+      topic_name = "predictions"
+      role       = "ACCESS_ROLE_PRODUCER"
+    }
+    permission {
+      topic_name = "predictions"
+      role       = "ACCESS_ROLE_CONSUMER"
+    }
+  }
+}
+
+# ============================================================
 # Output: Airflow variables JSON (for import into Airflow UI)
 # ============================================================
 
@@ -279,6 +355,8 @@ resource "local_file" "airflow_variables" {
     DP_SA_AUTH_KEY_PUBLIC_KEY = yandex_iam_service_account_key.sa_auth_key.public_key
     MLFLOW_TRACKING_URI  = "http://${yandex_compute_instance.mlflow.network_interface[0].ip_address}:5000"
     MLFLOW_EXTERNAL_URL  = "http://${yandex_compute_instance.mlflow.network_interface[0].nat_ip_address}:5000"
+    KAFKA_BOOTSTRAP      = "${[for h in yandex_mdb_kafka_cluster.kafka.host : "${h.name}:9091"][0]}"
+    KAFKA_PASSWORD       = var.kafka_password
     DP_SA_JSON = jsonencode({
       id                 = yandex_iam_service_account_key.sa_auth_key.id
       service_account_id = yandex_iam_service_account.sa.id

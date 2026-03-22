@@ -34,3 +34,8 @@ output "mlflow_url" {
 output "mlflow_internal_url" {
   value = "http://${yandex_compute_instance.mlflow.network_interface[0].ip_address}:5000"
 }
+
+# Kafka bootstrap server
+output "kafka_bootstrap" {
+  value = [for h in yandex_mdb_kafka_cluster.kafka.host : "${h.name}:9091"][0]
+}
