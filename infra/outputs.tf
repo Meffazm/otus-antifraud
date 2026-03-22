@@ -39,3 +39,18 @@ output "mlflow_internal_url" {
 output "kafka_bootstrap" {
   value = [for h in yandex_mdb_kafka_cluster.kafka.host : "${h.name}:9091"][0]
 }
+
+# Container Registry ID
+output "container_registry_id" {
+  value = yandex_container_registry.registry.id
+}
+
+# K8s cluster ID
+output "k8s_cluster_id" {
+  value = yandex_kubernetes_cluster.k8s.id
+}
+
+# K8s cluster endpoint
+output "k8s_cluster_endpoint" {
+  value = yandex_kubernetes_cluster.k8s.master[0].external_v4_endpoint
+}

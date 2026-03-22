@@ -18,6 +18,10 @@ resource "yandex_resourcemanager_folder_iam_member" "sa_roles" {
     "compute.admin",
     "managed-airflow.integrationProvider",
     "managed-kafka.admin",
+    "container-registry.images.puller",
+    "container-registry.images.pusher",
+    "k8s.clusters.agent",
+    "k8s.tunnelClusters.agent",
   ])
 
   folder_id = var.yc_folder_id
@@ -98,6 +102,28 @@ resource "yandex_vpc_security_group" "security_group" {
     description    = "Kafka SASL_SSL"
     v4_cidr_blocks = ["0.0.0.0/0"]
     port           = 9091
+  }
+
+  ingress {
+    protocol       = "TCP"
+    description    = "K8s API server"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = 6443
+  }
+
+  ingress {
+    protocol       = "TCP"
+    description    = "K8s API server (alt)"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = 443
+  }
+
+  ingress {
+    protocol       = "TCP"
+    description    = "K8s NodePort range"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    from_port      = 30000
+    to_port        = 32767
   }
 
   ingress {
@@ -367,4 +393,82 @@ resource "local_file" "airflow_variables" {
   })
   filename        = "${path.module}/airflow_variables.json"
   file_permission = "0600"
+}
+
+# ============================================================
+# Container Registry
+# ============================================================
+
+resource "yandex_container_registry" "registry" {
+  name      = "otus-antifraud-registry"
+  folder_id = var.yc_folder_id
+}
+
+# ============================================================
+# Kubernetes: Managed cluster and node group
+# ============================================================
+
+resource "yandex_kubernetes_cluster" "k8s" {
+  name        = "otus-antifraud-k8s"
+  network_id  = yandex_vpc_network.network.id
+
+  master {
+    version = "1.28"
+    zonal {
+      zone      = var.yc_zone
+      subnet_id = yandex_vpc_subnet.subnet.id
+    }
+    public_ip = true
+
+    security_group_ids = [yandex_vpc_security_group.security_group.id]
+  }
+
+  service_account_id      = yandex_iam_service_account.sa.id
+  node_service_account_id = yandex_iam_service_account.sa.id
+
+  release_channel         = "RAPID"
+
+  depends_on = [yandex_resourcemanager_folder_iam_member.sa_roles]
+}
+
+resource "yandex_kubernetes_node_group" "k8s_nodes" {
+  cluster_id = yandex_kubernetes_cluster.k8s.id
+  name       = "otus-antifraud-nodes"
+  version    = "1.28"
+
+  instance_template {
+    platform_id = "standard-v3"
+
+    resources {
+      cores  = 2
+      memory = 4
+    }
+
+    boot_disk {
+      size = 50
+      type = "network-ssd"
+    }
+
+    network_interface {
+      subnet_ids         = [yandex_vpc_subnet.subnet.id]
+      nat                = true
+      security_group_ids = [yandex_vpc_security_group.security_group.id]
+    }
+
+    scheduling_policy {
+      preemptible = true
+    }
+  }
+
+  scale_policy {
+    fixed_scale {
+      size = 3
+    }
+  }
+
+  allocation_policy {
+    location {
+      zone = var.yc_zone
+    }
+  }
 }

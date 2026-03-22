@@ -10,9 +10,12 @@ apply:
 destroy:
 	terraform destroy -auto-approve
 
-# Destroy Airflow, MLflow, PostgreSQL, Kafka, and network; keep S3 bucket and SA
+# Destroy Airflow, MLflow, PostgreSQL, Kafka, K8s, and network; keep S3 bucket and SA
 destroy-infra:
 	terraform destroy -auto-approve \
+		-target=yandex_kubernetes_node_group.k8s_nodes \
+		-target=yandex_kubernetes_cluster.k8s \
+		-target=yandex_container_registry.registry \
 		-target=yandex_airflow_cluster.airflow \
 		-target=yandex_compute_instance.mlflow \
 		-target=yandex_mdb_postgresql_cluster.mlflow_db \
@@ -24,6 +27,17 @@ destroy-infra:
 		-target=yandex_vpc_network.network \
 		-target=yandex_iam_service_account_key.sa_auth_key \
 		-target=local_file.airflow_variables
+
+# K8s credentials
+kubeconfig:
+	yc managed-kubernetes cluster get-credentials $(shell terraform output -raw k8s_cluster_id) --external --force
+
+# Destroy K8s + Registry (keep S3, SA, and other services)
+destroy-k8s:
+	terraform destroy -auto-approve \
+		-target=yandex_kubernetes_node_group.k8s_nodes \
+		-target=yandex_kubernetes_cluster.k8s \
+		-target=yandex_container_registry.registry
 
 BUCKET_NAME = $(shell terraform output -raw bucket_name 2>/dev/null)
 MLFLOW_HOST = $(shell terraform output -raw mlflow_url 2>/dev/null | sed 's|http://||;s|:5000||')
@@ -89,6 +103,6 @@ kafka-topics:
 ssh-mlflow:
 	ssh ubuntu@$(MLFLOW_HOST)
 
-.PHONY: init plan apply destroy destroy-infra \
+.PHONY: init plan apply destroy destroy-infra kubeconfig destroy-k8s \
 	upload-dags upload-scripts upload-venv upload-all rebuild-venv \
 	deploy urls airflow-vars kafka-status kafka-topics ssh-mlflow
