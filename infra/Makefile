@@ -82,7 +82,7 @@ deploy: apply upload-all airflow-vars
 
 # Build and push Docker image to YC Container Registry
 docker-build:
-	cd .. && docker build -t $(API_IMAGE):latest .
+	cd .. && docker build --platform linux/amd64 -t $(API_IMAGE):latest .
 
 docker-push: docker-build
 	docker push $(API_IMAGE):latest
@@ -200,13 +200,13 @@ prometheus:
 # Port-forward Airflow (http://localhost:8080, admin/admin)
 airflow-ui:
 	@echo "Airflow: http://localhost:8080  (admin / admin)"
-	kubectl port-forward svc/airflow-webserver 8080:8080
+	kubectl port-forward svc/airflow-api-server 8080:8080
 
 # Run load test against the deployed API
 k8s-load-test:
 	@EXTERNAL_IP=$$(kubectl get svc antifraud-api -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null); \
 	if [ -z "$$EXTERNAL_IP" ]; then echo "No external IP yet."; exit 1; fi; \
-	python3 ../scripts/load_test.py --url http://$$EXTERNAL_IP/predict --max-workers 200 --duration 600
+	python3 ../scripts/load_test.py --url http://$$EXTERNAL_IP/predict --max-workers 50 --duration 600 --ramp-interval 30
 
 .PHONY: init plan apply destroy destroy-infra kubeconfig destroy-k8s \
 	upload-dags upload-scripts upload-venv upload-all rebuild-venv \

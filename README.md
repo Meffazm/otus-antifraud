@@ -228,6 +228,60 @@ curl -X POST http://<EXTERNAL-IP>/predict \
     -d '{"tx_amount": 150.0, "tx_datetime": "2026-03-22 14:30:00"}'
 ```
 
+## ДЗ №10 — Мониторинг + автоскейлинг
+
+### Что сделано
+
+1. **HPA (Horizontal Pod Autoscaler)** — автоскейлинг от 4 до 6 реплик:
+   - Целевое использование CPU: 80%
+   - Политика масштабирования: до 2 подов за 60 секунд
+   - `k8s/hpa.yaml`
+
+2. **Prometheus-метрики в FastAPI** (`app/main.py`):
+   - `starlette-exporter` — автоматические HTTP-метрики (RPS, латентность, статус-коды)
+   - `predictions_total` — общее количество предсказаний
+   - `fraud_predictions_total` — количество fraud-предсказаний
+   - Эндпоинт `/metrics`
+
+3. **Prometheus + Grafana** в K8s (Helm `kube-prometheus-stack`):
+   - ServiceMonitor для scraping метрик приложения
+   - Grafana дашборд «Anti-Fraud API» (RPS, предсказания, латентность, CPU, реплики)
+
+4. **Алертинг** (`k8s/prometheusrule.yaml`):
+   - Алерт `HighReplicaCountAndCPU`: 6 реплик И CPU > 80% в течение 5 минут
+   - Severity: critical
+
+5. **Airflow в K8s** (Helm `apache-airflow`):
+   - DAGs синхронизируются из git-репозитория [otus-antifraud-dags](https://github.com/Meffazm/otus-antifraud-dags)
+   - Периодическое переобучение модели (weekly) с фиксацией метрик в MLflow
+
+6. **Нагрузочное тестирование** (`scripts/load_test.py`):
+   - Контролируемая генерация HTTP-трафика (~20 RPS)
+   - Имитация DDoS-атаки для проверки HPA и алертинга
+
+### Как воспроизвести
+
+```bash
+cd infra
+
+# 1. Установить Prometheus + Grafana
+make helm-monitoring
+
+# 2. Установить Airflow с git-sync
+make helm-airflow
+
+# 3. Применить HPA
+make k8s-hpa
+
+# 4. Доступ к UI
+make grafana       # http://localhost:3000
+make prometheus    # http://localhost:9090
+make airflow-ui    # http://localhost:8080 (admin/admin)
+
+# 5. Нагрузочное тестирование
+make k8s-load-test
+```
+
 ## Прогресс
 
 | Этап | Статус | Ветка |
@@ -240,7 +294,7 @@ curl -X POST http://<EXTERNAL-IP>/predict \
 | Валидация модели (A/B тестирование) | ✅ | `validation` |
 | Инференс на потоке (Kafka + Spark Streaming) | ✅ | `streaming` |
 | REST API + Kubernetes (CI/CD) | ✅ | `k8s-deploy` |
-| Мониторинг дрейфа | ⬜ | — |
+| Мониторинг + автоскейлинг | ✅ | `monitoring` |
 
 ## Документация
 

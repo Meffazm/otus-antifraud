@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 Load test for anti-fraud API.
-Sends requests with increasing concurrency to simulate DDoS attack.
+Sends requests with controlled concurrency to generate visible metrics
+without overwhelming the cluster.
 
 Usage:
     python scripts/load_test.py --url http://<EXTERNAL-IP>/predict
-    python scripts/load_test.py --url http://<EXTERNAL-IP>/predict --max-workers 200 --duration 300
+    python scripts/load_test.py --url http://<EXTERNAL-IP>/predict --rps 50 --duration 300
 """
 
 import argparse
@@ -13,7 +14,6 @@ import json
 import random
 import time
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
@@ -29,75 +29,54 @@ def send_request(url):
     try:
         with urlopen(req, timeout=10) as resp:
             return resp.status
-    except URLError:
-        return 0
     except Exception:
-        return -1
+        return 0
 
 
 def main():
     parser = argparse.ArgumentParser(description="Load test for anti-fraud API")
     parser.add_argument("--url", required=True, help="API predict endpoint URL")
-    parser.add_argument("--max-workers", type=int, default=100, help="Max concurrent workers (default: 100)")
-    parser.add_argument("--duration", type=int, default=600, help="Total test duration in seconds (default: 600)")
-    parser.add_argument("--ramp-interval", type=int, default=30, help="Seconds between ramp-up steps (default: 30)")
+    parser.add_argument("--rps", type=int, default=20, help="Target requests per second (default: 20)")
+    parser.add_argument("--duration", type=int, default=300, help="Test duration in seconds (default: 300)")
     args = parser.parse_args()
 
     print(f"Load test: {args.url}")
-    print(f"Ramping from 1 to {args.max_workers} workers over {args.duration}s")
-    print(f"Ramp interval: {args.ramp_interval}s")
+    print(f"Target: ~{args.rps} RPS for {args.duration}s")
     print()
 
     start_time = time.time()
-    total_requests = 0
-    total_errors = 0
+    total_ok = 0
+    total_err = 0
     lock = threading.Lock()
+    interval = 1.0 / args.rps
 
-    running = True
+    while time.time() - start_time < args.duration:
+        t = threading.Thread(target=lambda: None, daemon=True)
 
-    def worker():
-        nonlocal total_requests, total_errors
-        while running:
+        def do_request():
+            nonlocal total_ok, total_err
             status = send_request(args.url)
             with lock:
-                total_requests += 1
-                if status != 200:
-                    total_errors += 1
+                if status == 200:
+                    total_ok += 1
+                else:
+                    total_err += 1
 
-    workers = []
-    current_workers = 0
-    steps = args.max_workers // max(1, (args.duration // args.ramp_interval))
-    if steps < 1:
-        steps = 1
+        t = threading.Thread(target=do_request, daemon=True)
+        t.start()
+        time.sleep(interval)
 
-    try:
-        while time.time() - start_time < args.duration:
-            # Ramp up workers
-            new_count = min(current_workers + steps, args.max_workers)
-            for _ in range(new_count - current_workers):
-                t = threading.Thread(target=worker, daemon=True)
-                t.start()
-                workers.append(t)
-            current_workers = new_count
-
-            elapsed = time.time() - start_time
-            with lock:
-                rps = total_requests / max(1, elapsed)
-                err_rate = (total_errors / max(1, total_requests)) * 100
-            print(f"[{elapsed:.0f}s] Workers: {current_workers}, "
-                  f"Total: {total_requests}, RPS: {rps:.0f}, "
-                  f"Errors: {err_rate:.1f}%")
-
-            time.sleep(args.ramp_interval)
-
-    except KeyboardInterrupt:
-        print("\nStopping...")
-    finally:
-        running = False
         elapsed = time.time() - start_time
-        print(f"\nResults: {total_requests} requests in {elapsed:.0f}s "
-              f"({total_requests / max(1, elapsed):.0f} RPS), "
-              f"{total_errors} errors ({(total_errors / max(1, total_requests)) * 100:.1f}%)")
+        if int(elapsed) % 10 == 0 and int(elapsed) > 0:
+            with lock:
+                rps = (total_ok + total_err) / elapsed
+            if int(elapsed * 10) % 100 == 0:
+                print(f"[{elapsed:.0f}s] OK: {total_ok}, Err: {total_err}, RPS: {rps:.1f}")
+
+    elapsed = time.time() - start_time
+    print(f"\nDone: {total_ok + total_err} requests in {elapsed:.0f}s "
+          f"({(total_ok + total_err) / elapsed:.1f} RPS), "
+          f"{total_err} errors")
 
 
 if __name__ == "__main__":
