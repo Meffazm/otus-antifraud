@@ -440,7 +440,7 @@ resource "yandex_kubernetes_cluster" "k8s" {
 resource "yandex_kubernetes_node_group" "k8s_nodes" {
   cluster_id = yandex_kubernetes_cluster.k8s.id
   name       = "otus-antifraud-nodes"
-  version    = "1.28"
+  version    = "1.34"
 
   instance_template {
     platform_id = "standard-v3"
