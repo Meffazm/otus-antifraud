@@ -21,6 +21,17 @@ S3 (Parquet) → kafka_producer.py → Kafka [transactions]
                           (PipelineModel из MLflow/S3)
                                         ↓
                                 Kafka [predictions]
+
+                          REST API + K8s (HW_09):
+GitHub push (main) → GitHub Actions → pytest → Docker build
+                                                    ↓
+                                        YC Container Registry
+                                                    ↓
+                                    Managed Kubernetes (3 узла)
+                                        ├── Deployment (2 реплики)
+                                        └── Service (LoadBalancer)
+                                                    ↓
+                                        POST /predict → FastAPI (numpy)
 ```
 
 ## Структура репозитория
@@ -39,7 +50,18 @@ S3 (Parquet) → kafka_producer.py → Kafka [transactions]
 │   ├── train_model.py         # PySpark — обучение модели + MLflow
 │   ├── validate_model.py      # PySpark — A/B валидация модели
 │   ├── kafka_producer.py      # Kafka producer — воспроизведение транзакций
-│   └── streaming_inference.py # Spark Structured Streaming — инференс
+│   ├── streaming_inference.py # Spark Structured Streaming — инференс
+│   └── convert_model.py       # Конвертер PySpark модели → JSON
+├── app/                       # FastAPI REST API
+│   ├── main.py                # Эндпоинты (/predict, /health)
+│   ├── model.py               # Загрузка модели и инференс (numpy)
+│   └── features.py            # Конструирование признаков
+├── k8s/                       # Kubernetes манифесты
+│   ├── deployment.yaml        # Deployment (2 реплики)
+│   └── service.yaml           # Service (LoadBalancer)
+├── .github/workflows/         # CI/CD
+│   └── ci-cd.yml              # GitHub Actions: test → build → deploy
+├── Dockerfile                 # Образ для anti-fraud API
 ├── notebooks/
 │   ├── data_quality_analysis.ipynb  # Анализ качества данных
 │   └── feast_features.ipynb         # Feast Feature Store демо
@@ -56,6 +78,8 @@ S3 (Parquet) → kafka_producer.py → Kafka [transactions]
 - **Managed Kafka** — потоковая передача транзакций и предсказаний
 - **VM** — MLflow Tracking Server (порт 5000)
 - **DataProc** — эфемерный Spark-кластер (создаётся/удаляется через DAG)
+- **Managed Kubernetes** — K8s кластер (3 узла) для деплоя REST API
+- **Container Registry** — реестр Docker-образов
 - **VPC** — сеть с NAT-шлюзом и security group
 
 Подробнее: [infra/README.md](infra/README.md)
@@ -131,6 +155,73 @@ make upload-all
 При нормальной нагрузке (50 TPS) и пиковой (400 TPS) система справляется с большим запасом.
 Одного узла s3-c4-m16 более чем достаточно для требуемой пропускной способности.
 
+## ДЗ №9 — REST API + Kubernetes
+
+### Что сделано
+
+1. **REST API** (`app/`) — FastAPI-сервис для скоринга транзакций:
+   - `POST /predict` — принимает `tx_amount` и `tx_datetime`, возвращает `prediction` и `fraud_probability`
+   - `GET /health` — проверка работоспособности
+   - Модель: коэффициенты LogisticRegression извлечены из PySpark PipelineModel в JSON, инференс через numpy (sigmoid)
+   - 48 тестов (features, model, API)
+
+2. **Конвертер модели** (`scripts/convert_model.py`):
+   - Читает PySpark PipelineModel из S3 (boto3 + pyarrow, без PySpark)
+   - Извлекает feature names, коэффициенты LR, intercept
+   - Сохраняет в `model/model.json`
+
+3. **Docker** — `python:3.11-slim`, ~200 МБ образ (FastAPI + uvicorn + numpy + model.json)
+
+4. **CI/CD** (`.github/workflows/ci-cd.yml`):
+   - Триггер: push в `main`
+   - Этапы: тесты (pytest) → сборка Docker → push в YC Container Registry → deploy в K8s
+   - Автоматический деплой: `kubectl apply` + `rollout status`
+
+5. **Kubernetes** (`k8s/`):
+   - Deployment: 2 реплики, liveness/readiness probes на `/health`
+   - Service: LoadBalancer (порт 80 → 8000)
+
+6. **Terraform** (`infra/main.tf`):
+   - `yandex_container_registry` — реестр Docker-образов
+   - `yandex_kubernetes_cluster` — Managed K8s (зональный, публичный IP)
+   - `yandex_kubernetes_node_group` — 3 узла (standard-v3, 2 vCPU, 4 ГБ RAM, preemptible)
+
+### Как воспроизвести
+
+```bash
+# 1. Поднять K8s кластер и Container Registry
+cd infra
+terraform apply -auto-approve
+
+# 2. Конвертировать модель (если нужно обновить model.json)
+pip install boto3 pyarrow
+python scripts/convert_model.py \
+    --bucket BUCKET_NAME \
+    --model-path models/model_20260321 \
+    --output model/model.json
+
+# 3. Настроить GitHub Secrets в репозитории:
+#    YC_SA_KEY        — JSON ключ сервисного аккаунта
+#    YC_FOLDER_ID     — ID каталога YC
+#    YC_REGISTRY_ID   — terraform output -raw container_registry_id
+#    YC_K8S_CLUSTER_ID — terraform output -raw k8s_cluster_id
+
+# 4. Push в main → GitHub Actions автоматически:
+#    - запустит тесты
+#    - соберёт Docker-образ
+#    - запушит в Container Registry
+#    - задеплоит в K8s
+
+# 5. Получить публичный IP сервиса
+make kubeconfig
+kubectl get svc antifraud-api
+
+# 6. Тест API
+curl -X POST http://<EXTERNAL-IP>/predict \
+    -H "Content-Type: application/json" \
+    -d '{"tx_amount": 150.0, "tx_datetime": "2026-03-22 14:30:00"}'
+```
+
 ## Прогресс
 
 | Этап | Статус | Ветка |
@@ -142,6 +233,7 @@ make upload-all
 | Обучение модели + MLFlow | ✅ | `retrain` |
 | Валидация модели (A/B тестирование) | ✅ | `validation` |
 | Инференс на потоке (Kafka + Spark Streaming) | ✅ | `streaming` |
+| REST API + Kubernetes (CI/CD) | ✅ | `k8s-deploy` |
 | Мониторинг дрейфа | ⬜ | — |
 
 ## Документация
