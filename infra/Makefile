@@ -42,6 +42,9 @@ destroy-k8s:
 BUCKET_NAME = $(shell terraform output -raw bucket_name 2>/dev/null)
 MLFLOW_HOST = $(shell terraform output -raw mlflow_url 2>/dev/null | sed 's|http://||;s|:5000||')
 KAFKA_BOOTSTRAP = $(shell terraform output -raw kafka_bootstrap 2>/dev/null)
+REGISTRY_ID = $(shell terraform output -raw container_registry_id 2>/dev/null)
+K8S_CLUSTER_ID = $(shell terraform output -raw k8s_cluster_id 2>/dev/null)
+API_IMAGE = cr.yandex/$(REGISTRY_ID)/antifraud-api
 
 # Upload DAGs and scripts to S3 bucket (Airflow syncs from there)
 upload-dags:
@@ -77,11 +80,64 @@ rebuild-venv:
 # Deploy everything: apply terraform, upload artifacts, rebuild venv, show urls
 deploy: apply upload-all airflow-vars
 
+# Build and push Docker image to YC Container Registry
+docker-build:
+	cd .. && docker build -t $(API_IMAGE):latest .
+
+docker-push: docker-build
+	docker push $(API_IMAGE):latest
+
+# Deploy to K8s: build, push, apply manifests
+k8s-deploy: docker-push kubeconfig
+	cd .. && sed "s|cr.yandex/REGISTRY_ID/antifraud-api:latest|$(API_IMAGE):latest|g" k8s/deployment.yaml | kubectl apply -f -
+	kubectl apply -f ../k8s/service.yaml
+	kubectl rollout status deployment/antifraud-api --timeout=120s
+
+# Show K8s service external IP
+k8s-status:
+	@kubectl get pods -l app=antifraud-api
+	@echo ""
+	@kubectl get svc antifraud-api
+
+# Test the deployed API
+k8s-test:
+	@EXTERNAL_IP=$$(kubectl get svc antifraud-api -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null); \
+	if [ -z "$$EXTERNAL_IP" ]; then echo "No external IP yet. Run 'make k8s-status' to check."; exit 1; fi; \
+	echo "Health check:"; \
+	curl -s http://$$EXTERNAL_IP/health; echo ""; \
+	echo ""; \
+	echo "Predict:"; \
+	curl -s -X POST http://$$EXTERNAL_IP/predict \
+		-H "Content-Type: application/json" \
+		-d '{"transaction_id": 12345, "tx_amount": 150.0, "tx_datetime": "2026-03-22 14:30:00"}'; echo ""
+
+# Convert PySpark model from S3 to JSON
+convert-model:
+	cd .. && python3 scripts/convert_model.py \
+		--bucket $(BUCKET_NAME) \
+		--model-path models/model_20260321 \
+		--output model/model.json \
+		--access-key $$(terraform -chdir=infra output -raw access_key) \
+		--secret-key $$(terraform -chdir=infra output -raw secret_key)
+
+# Print GitHub Secrets values for easy copy-paste
+github-secrets:
+	@echo "Configure these in GitHub → Settings → Secrets → Actions:"
+	@echo ""
+	@echo "YC_FOLDER_ID     = $(shell yc config get folder-id 2>/dev/null)"
+	@echo "YC_REGISTRY_ID   = $(REGISTRY_ID)"
+	@echo "YC_K8S_CLUSTER_ID = $(K8S_CLUSTER_ID)"
+	@echo ""
+	@echo "YC_SA_KEY: run this and paste the output:"
+	@echo "  yc iam key create --service-account-name otus-sa --output /dev/stdout"
+
 # Show all service URLs
 urls:
 	@echo "Airflow URL:  $(shell terraform output -raw airflow_url 2>/dev/null)"
 	@echo "MLflow URL:   $(shell terraform output -raw mlflow_url 2>/dev/null)"
 	@echo "Kafka:        $(KAFKA_BOOTSTRAP)"
+	@echo "K8s endpoint: $(shell terraform output -raw k8s_cluster_endpoint 2>/dev/null)"
+	@echo "Registry ID:  $(REGISTRY_ID)"
 
 # Import Airflow variables from generated JSON
 airflow-vars:
@@ -105,4 +161,5 @@ ssh-mlflow:
 
 .PHONY: init plan apply destroy destroy-infra kubeconfig destroy-k8s \
 	upload-dags upload-scripts upload-venv upload-all rebuild-venv \
-	deploy urls airflow-vars kafka-status kafka-topics ssh-mlflow
+	deploy urls airflow-vars kafka-status kafka-topics ssh-mlflow \
+	docker-build docker-push k8s-deploy k8s-status k8s-test convert-model github-secrets
