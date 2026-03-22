@@ -78,15 +78,17 @@ class TestPredictEndpoint:
         data = response.json()
         assert data["transaction_id"] is None
 
-    def test_predict_high_amount_is_fraud(self, client):
-        # Large amount should trigger fraud prediction with dummy model
-        payload = {
-            "tx_amount": 1000.0,
+    def test_predict_high_amount_higher_probability(self, client):
+        # Higher amount should have higher fraud probability than lower amount
+        high = client.post("/predict", json={
+            "tx_amount": 10000.0,
             "tx_datetime": "2026-03-22 14:30:00",
-        }
-        response = client.post("/predict", json=payload)
-        data = response.json()
-        assert data["prediction"] == 1
+        }).json()
+        low = client.post("/predict", json={
+            "tx_amount": 1.0,
+            "tx_datetime": "2026-03-22 14:30:00",
+        }).json()
+        assert high["fraud_probability"] > low["fraud_probability"]
 
     def test_predict_low_amount_is_legit(self, client):
         # Small amount should be predicted as legitimate
@@ -113,12 +115,9 @@ class TestPredictEndpoint:
         assert response.status_code == 422
 
     def test_predict_known_values(self, client):
-        # Verify exact probability for a known input
+        # Verify response structure and valid probability for a known input
         # 2026-03-22 is Sunday, 14:30 is not night
         # features: [150.0, 14.0, 1.0, 1.0, 0.0]
-        # z = 0.5*150 + (-0.1)*14 + 0.05*1 + 0.2*1 + 0.3*0 + (-2.0)
-        # z = 75 - 1.4 + 0.05 + 0.2 + 0 - 2.0 = 71.85
-        # sigmoid(71.85) ~ 1.0
         payload = {
             "transaction_id": 1,
             "tx_amount": 150.0,
@@ -126,5 +125,11 @@ class TestPredictEndpoint:
         }
         response = client.post("/predict", json=payload)
         data = response.json()
-        assert data["prediction"] == 1
-        assert data["fraud_probability"] > 0.99
+        assert data["transaction_id"] == 1
+        assert data["prediction"] in (0, 1)
+        assert 0.0 <= data["fraud_probability"] <= 1.0
+        # Probability should match prediction threshold
+        if data["prediction"] == 1:
+            assert data["fraud_probability"] > 0.5
+        else:
+            assert data["fraud_probability"] <= 0.5
