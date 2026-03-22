@@ -20,6 +20,7 @@ resource "yandex_resourcemanager_folder_iam_member" "sa_roles" {
     "managed-kafka.admin",
     "container-registry.images.puller",
     "container-registry.images.pusher",
+    "k8s.admin",
     "k8s.clusters.agent",
     "k8s.tunnelClusters.agent",
   ])

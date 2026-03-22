@@ -5,6 +5,10 @@
 #   YC_FOLDER_ID       — Yandex Cloud folder ID
 #   YC_REGISTRY_ID     — Container Registry ID
 #   YC_K8S_CLUSTER_ID  — Managed Kubernetes cluster ID
+#   S3_ACCESS_KEY      — S3 static access key
+#   S3_SECRET_KEY      — S3 static secret key
+#   S3_BUCKET          — S3 bucket name
+#   MODEL_PATH         — Model path in S3 (e.g. models/model_20260321)
 
 name: CI/CD
 
@@ -45,6 +49,21 @@ jobs:
           echo '${{ secrets.YC_SA_KEY }}' > /tmp/sa-key.json
           yc config set service-account-key /tmp/sa-key.json
           yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Convert model from S3
+        run: |
+          pip install boto3 pyarrow
+          python scripts/convert_model.py \
+            --bucket ${{ secrets.S3_BUCKET }} \
+            --model-path ${{ secrets.MODEL_PATH }} \
+            --output model/model.json \
+            --access-key ${{ secrets.S3_ACCESS_KEY }} \
+            --secret-key ${{ secrets.S3_SECRET_KEY }}
 
       - name: Login to Container Registry
         run: |
