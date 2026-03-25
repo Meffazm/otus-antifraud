@@ -79,45 +79,35 @@ variable "public_key_path" {
   default     = "~/.ssh/id_ed25519.pub"
 }
 
-# DataProc cluster
-variable "yc_dataproc_cluster_name" {
+# Airflow
+variable "yc_airflow_cluster_name" {
   type        = string
-  description = "Name of the DataProc cluster"
-  default     = "otus-dataproc-cluster"
+  description = "Name of the Managed Airflow cluster"
+  default     = "otus-airflow"
 }
 
-variable "yc_dataproc_version" {
+variable "airflow_admin_password" {
   type        = string
-  description = "DataProc image version"
-  default     = "2.0"
+  description = "Admin password for Airflow web UI (min 8 chars)"
+  sensitive   = true
 }
 
-variable "dataproc_master_resources" {
-  type = object({
-    resource_preset_id = string
-    disk_type_id       = string
-    disk_size          = number
-  })
-  description = "Master subcluster resource configuration"
-  default = {
-    resource_preset_id = "s3-c2-m8"
-    disk_type_id       = "network-ssd"
-    disk_size          = 40
-  }
+# MLflow VM
+variable "mlflow_vm_name" {
+  type        = string
+  description = "Name of the MLflow VM"
+  default     = "otus-mlflow"
 }
 
-variable "dataproc_data_resources" {
-  type = object({
-    resource_preset_id = string
-    disk_type_id       = string
-    disk_size          = number
-    hosts_count        = number
-  })
-  description = "Data subcluster resource configuration"
-  default = {
-    resource_preset_id = "s3-c4-m16"
-    disk_type_id       = "network-ssd"
-    disk_size          = 128
-    hosts_count        = 3
-  }
+variable "mlflow_db_password" {
+  type        = string
+  description = "Password for MLflow PostgreSQL database"
+  sensitive   = true
+}
+
+# Kafka
+variable "kafka_password" {
+  type        = string
+  description = "Password for Kafka users (producer/consumer)"
+  sensitive   = true
 }

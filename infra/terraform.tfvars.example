@@ -11,7 +11,8 @@ yc_subnet_range          = "10.0.0.0/24"
 yc_nat_gateway_name      = "otus-nat-gateway"
 yc_route_table_name      = "otus-route-table"
 yc_security_group_name   = "otus-security-group"
-yc_dataproc_cluster_name = "otus-dataproc-cluster"
-yc_dataproc_version      = "2.0"
-
 public_key_path = "~/.ssh/id_ed25519.pub"
+
+airflow_admin_password = ""  # min 8 characters
+mlflow_db_password     = ""  # password for MLflow PostgreSQL
+kafka_password         = ""  # password for Kafka users (min 8 characters)

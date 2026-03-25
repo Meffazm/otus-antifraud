@@ -1,0 +1,5 @@
+fastapi>=0.104.0
+uvicorn>=0.24.0
+numpy>=1.24.0
+starlette-exporter>=0.21.0
+prometheus-client>=0.20.0

@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: antifraud-api
+  labels:
+    app: antifraud-api
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: antifraud-api
+  template:
+    metadata:
+      labels:
+        app: antifraud-api
+    spec:
+      containers:
+        - name: antifraud-api
+          image: cr.yandex/REGISTRY_ID/antifraud-api:latest
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5

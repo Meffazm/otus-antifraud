@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: antifraud-api-dashboard
+  labels:
+    grafana_dashboard: "1"
+data:
+  antifraud-api.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "links": [],
+      "panels": [
+        {
+          "title": "Request Rate (RPS)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "targets": [
+            {
+              "expr": "sum(rate(starlette_requests_total{job=\"antifraud-api\"}[1m]))",
+              "legendFormat": "Total RPS"
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "reqps"}}
+        },
+        {
+          "title": "Predictions Total",
+          "type": "stat",
+          "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+          "targets": [
+            {
+              "expr": "sum(predictions_total{job=\"antifraud-api\"})",
+              "legendFormat": "Total"
+            }
+          ]
+        },
+        {
+          "title": "Fraud Predictions",
+          "type": "stat",
+          "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
+          "targets": [
+            {
+              "expr": "sum(fraud_predictions_total{job=\"antifraud-api\"})",
+              "legendFormat": "Fraud"
+            }
+          ]
+        },
+        {
+          "title": "Request Latency (p95)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(starlette_request_duration_seconds_bucket{job=\"antifraud-api\"}[1m])) by (le))",
+              "legendFormat": "p95 latency"
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "s"}}
+        },
+        {
+          "title": "HTTP Status Codes",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "targets": [
+            {
+              "expr": "sum by (status_code) (rate(starlette_requests_total{job=\"antifraud-api\"}[1m]))",
+              "legendFormat": "{{status_code}}"
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "reqps"}}
+        },
+        {
+          "title": "Pod CPU Usage",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+          "targets": [
+            {
+              "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{container=\"antifraud-api\"}[1m]))",
+              "legendFormat": "{{pod}}"
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "percentunit"}}
+        },
+        {
+          "title": "Replicas",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+          "targets": [
+            {
+              "expr": "kube_deployment_status_replicas{deployment=\"antifraud-api\"}",
+              "legendFormat": "Current replicas"
+            },
+            {
+              "expr": "kube_deployment_spec_replicas{deployment=\"antifraud-api\"}",
+              "legendFormat": "Desired replicas"
+            }
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "title": "Anti-Fraud API",
+      "uid": "antifraud-api",
+      "version": 1
+    }

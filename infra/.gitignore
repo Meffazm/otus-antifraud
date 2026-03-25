@@ -6,3 +6,4 @@ terraform.tfvars
 .terraform
 .terraform.lock.hcl
 *.info
+airflow_variables.json

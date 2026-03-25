@@ -1,0 +1,26 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: antifraud-api-alerts
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: antifraud-api
+      rules:
+        - alert: HighReplicaCountAndCPU
+          expr: |
+            kube_deployment_status_replicas{deployment="antifraud-api"} == 6
+            and
+            max(
+              rate(container_cpu_usage_seconds_total{container="antifraud-api"}[5m])
+              /
+              on(pod) group_left()
+              kube_pod_container_resource_limits{container="antifraud-api", resource="cpu"}
+            ) > 0.8
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Anti-fraud API at max replicas with high CPU"
+            description: "All 6 replicas are deployed and at least one pod has CPU usage above 80% for 5 minutes. Possible DDoS attack."
